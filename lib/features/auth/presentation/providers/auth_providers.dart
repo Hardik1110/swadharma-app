@@ -34,6 +34,7 @@ class AuthNotifier extends AsyncNotifier<User?> {
 
   Future<void> logout() async {
     await ref.read(authRepositoryProvider).logout();
+    ref.read(sessionExpiredNoticeProvider.notifier).clear();
     state = const AsyncData(null);
   }
 
@@ -41,6 +42,19 @@ class AuthNotifier extends AsyncNotifier<User?> {
   Future<void> sessionExpired() async {
     if (state.value == null) return;
     await ref.read(authTokenProvider.notifier).clear();
+    ref.read(sessionExpiredNoticeProvider.notifier).show();
     state = const AsyncData(null);
   }
 }
+
+/// True after the server rejected the saved login, so the sign-in screen can
+/// say why the user was signed out. Cleared on explicit logout or new sign-in.
+class SessionExpiredNotice extends Notifier<bool> {
+  @override
+  bool build() => false;
+  void show() => state = true;
+  void clear() => state = false;
+}
+
+final sessionExpiredNoticeProvider =
+    NotifierProvider<SessionExpiredNotice, bool>(SessionExpiredNotice.new);
