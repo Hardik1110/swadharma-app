@@ -13,10 +13,15 @@ import '../golden/harness.dart';
 import '../helpers.dart';
 
 void main() {
-  List<Override> overrides(FakeAuthRepository repo, {String phoneAuth = 'demo'}) => [
+  List<Override> overrides(FakeAuthRepository repo,
+          {String phoneAuth = 'demo', String? astrologerAuth}) =>
+      [
         authRepositoryProvider.overrideWithValue(repo),
-        appConfigProvider.overrideWith((ref) async =>
-            AppConfig(callsEnabled: true, expertise: const [], phoneAuth: phoneAuth)),
+        appConfigProvider.overrideWith((ref) async => AppConfig(
+            callsEnabled: true,
+            expertise: const [],
+            phoneAuth: phoneAuth,
+            astrologerAuth: astrologerAuth)),
       ];
 
   List<GoRoute> routes() => [GoRoute(path: '/', builder: (_, _) => const LoginPage())];
@@ -147,6 +152,24 @@ void main() {
     // It is painted last (above the scroll view), not hidden beneath it.
     final stack = tester.widget<Stack>(find.ancestor(of: cover, matching: find.byType(Stack)).first);
     expect(stack.children.last.key, const Key('status_bar_cover'));
+    await disposeScreen(tester, c);
+  });
+
+  testWidgets('customers on Firebase, astrologers on the demo code: numbers still shown', (tester) async {
+    final c = await pumpRouted(tester, routes(),
+        overrides: overrides(FakeAuthRepository(), phoneAuth: 'firebase', astrologerAuth: 'demo'));
+    await tester.tap(find.byKey(const Key('astrologer_login')));
+    await tester.pumpAndSettle();
+    expect(find.text('Demo astrologers (tap to fill)'), findsOneWidget);
+    await disposeScreen(tester, c);
+  });
+
+  testWidgets('astrologers on Firebase: no demo numbers', (tester) async {
+    final c = await pumpRouted(tester, routes(),
+        overrides: overrides(FakeAuthRepository(), phoneAuth: 'firebase', astrologerAuth: 'firebase'));
+    await tester.tap(find.byKey(const Key('astrologer_login')));
+    await tester.pumpAndSettle();
+    expect(find.text('Demo astrologers (tap to fill)'), findsNothing);
     await disposeScreen(tester, c);
   });
 }

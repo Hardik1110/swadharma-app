@@ -28,7 +28,11 @@ class _Otp {
 
 class Api {
   Api(this.store, this.hub, this.consultations,
-      {this.devMode = true, this.publicDir, this.firebase, this.enableConsole = true});
+      {this.devMode = true,
+      this.publicDir,
+      this.firebase,
+      this.enableConsole = true,
+      this.astrologerDemoLogin = true});
 
   static const otpTtl = Duration(minutes: 5);
   static const otpResend = Duration(seconds: 30);
@@ -43,6 +47,14 @@ class Api {
 
   /// Directory holding console.html.
   final String? publicDir;
+
+  /// With Firebase on for customers (real SMS), astrologers can still sign in
+  /// with the on-screen demo code. The demo astrologer numbers are not real
+  /// phones, so they could never receive an SMS. Set false to require Firebase
+  /// for astrologers too (then add their numbers as Firebase test numbers, or
+  /// use real ones). Leaving this true on a public server lets anyone sign in
+  /// as a demo astrologer.
+  final bool astrologerDemoLogin;
 
   /// The browser astrologer console (and its unauthenticated endpoints) are a
   /// demo aid. Turn off on a public deployment if you don't want strangers
@@ -62,6 +74,8 @@ class Api {
       ..get('/config', (Request _) => _json({
             'callsEnabled': consultations.config.callsEnabled,
             'phoneAuth': firebase != null ? 'firebase' : 'demo',
+            'astrologerAuth':
+                firebase != null && !astrologerDemoLogin ? 'firebase' : 'demo',
             'expertise': expertiseTags,
           }))
       ..post('/auth/check-phone', _checkPhone)
@@ -190,9 +204,9 @@ class Api {
 
   Future<Response> _sendOtp(Request req) async {
     final body = await _body(req);
-    _demoOnly();
-    final phone = _phone(body['phone']);
     final purpose = _purpose(body);
+    _demoOnly(purpose);
+    final phone = _phone(body['phone']);
     _checkPurpose(phone, purpose);
     final prev = _otps[phone];
     if (prev != null && DateTime.now().difference(prev.sentAt) < otpResend) {
@@ -210,11 +224,12 @@ class Api {
     });
   }
 
-  /// Demo OTPs would bypass SMS verification, so they are off in Firebase mode.
-  void _demoOnly() {
-    if (firebase != null) {
-      throw ApiError(400, 'use_firebase', 'This server uses Firebase phone login');
-    }
+  /// Demo OTPs would bypass SMS verification, so in Firebase mode they are
+  /// off, except for astrologers when [astrologerDemoLogin] is set.
+  void _demoOnly(String purpose) {
+    if (firebase == null) return;
+    if (purpose == 'astrologer' && astrologerDemoLogin) return;
+    throw ApiError(400, 'use_firebase', 'This server uses Firebase phone login');
   }
 
   /// Login needs an existing account; sign-up needs a new number.
@@ -279,7 +294,6 @@ class Api {
   }
 
   Future<Response> _verifyOtp(Request req) async {
-    _demoOnly();
     final body = await _body(req);
     final phone = _phone(body['phone']);
     final otp = (body['otp'] as String? ?? '').trim();
@@ -288,6 +302,7 @@ class Api {
       _otps.remove(phone);
       throw ApiError(400, 'otp_expired', 'OTP expired. Please request a new one.');
     }
+    _demoOnly(entry.purpose);
     if (entry.code != otp) {
       entry.attempts++;
       if (entry.attempts >= otpMaxAttempts) {

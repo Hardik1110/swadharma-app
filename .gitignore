@@ -61,3 +61,6 @@ local.properties
 server/data/
 # Test-run output; the README screenshots live in docs/screenshots
 test/golden/out/
+
+# Personal editor settings
+.vscode/settings.json

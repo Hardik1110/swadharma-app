@@ -25,7 +25,8 @@ If your project is in *Secured mode* instead (certificate enabled), either creat
 | `DATA_FILE` | no | JSON database file (default in the Docker image: `/app/data/db.json`) |
 | `ENABLE_CONSOLE` | no | `false` hides the browser astrologer console (it has no login) |
 | `DEV_MODE` | no | `false` stops returning the OTP in API responses (then you need Firebase SMS) |
-| `FIREBASE_PROJECT_ID` | for real SMS | turns the demo OTP off; see `README.md` |
+| `FIREBASE_PROJECT_ID` | for real SMS | customers sign in with Firebase SMS; see `README.md` |
+| `ASTROLOGER_LOGIN` | no | `firebase` makes astrologers use Firebase SMS too. Default: astrologers keep the on-screen demo code, which on a **public** server lets anyone sign in as a demo astrologer. Use `firebase` there |
 
 Leave `DEV_MODE` and `FIREBASE_PROJECT_ID` unset for a demo: the login code is shown on screen.
 

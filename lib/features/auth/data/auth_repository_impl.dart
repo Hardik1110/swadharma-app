@@ -46,7 +46,12 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<OtpTicket> sendOtp(String phone, OtpPurpose purpose) async {
     final config = await _api.get<Map<String, dynamic>>('/config');
-    final serverUsesFirebase = config['phoneAuth'] == 'firebase';
+    // Each role can use a different login: customers real SMS (Firebase) while
+    // astrologers keep the on-screen demo code, or both on the same.
+    final method = purpose == OtpPurpose.astrologer
+        ? (config['astrologerAuth'] ?? config['phoneAuth'])
+        : config['phoneAuth'];
+    final serverUsesFirebase = method == 'firebase';
 
     if (serverUsesFirebase) {
       if (!_phoneAuth.isAvailable) {

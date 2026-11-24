@@ -13,6 +13,9 @@ import 'package:shelf/shelf_io.dart' as io;
 ///                  testing-mode project (App ID only)
 ///   DATA_FILE      JSON persistence file (default data/db.json, "" = memory only)
 ///   DEV_MODE       "false" hides the OTP from API responses
+///   ASTROLOGER_LOGIN  "firebase" makes astrologers use Firebase SMS too. By default,
+///                  when Firebase is on, astrologers keep the on-screen demo code
+///                  (the demo astrologer numbers are not real phones).
 ///   PUBLIC_DIR     folder with console.html and demo/ (default: next to bin/)
 ///   ENABLE_CONSOLE "false" disables the unauthenticated browser console
 ///   FIREBASE_PROJECT_ID  enables Firebase phone login (real SMS) and turns
@@ -37,6 +40,7 @@ Future<void> main() async {
       devMode: env['DEV_MODE'] != 'false',
       publicDir: env['PUBLIC_DIR'] ?? '$scriptDir/public',
       enableConsole: env['ENABLE_CONSOLE'] != 'false',
+      astrologerDemoLogin: env['ASTROLOGER_LOGIN'] != 'firebase',
       firebase:
           projectId.isEmpty ? null : FirebaseTokenVerifier(projectId: projectId));
 
@@ -48,7 +52,9 @@ Future<void> main() async {
         : 'Astrologer console: disabled')
     ..writeln(projectId.isEmpty
         ? 'Login: demo OTP (set FIREBASE_PROJECT_ID for real SMS)'
-        : 'Login: Firebase phone auth, project $projectId')
+        : 'Login: Firebase SMS for customers, '
+            '${env['ASTROLOGER_LOGIN'] == 'firebase' ? 'Firebase SMS' : 'on-screen demo code'} for astrologers '
+            '(project $projectId)')
     ..writeln(config.usesStaticToken
         ? 'Voice/video calls enabled (Agora, fixed demo token)'
         : config.usesTokens

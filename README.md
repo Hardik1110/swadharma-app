@@ -73,11 +73,13 @@ By default the server uses a **demo OTP** (shown on screen). To send real SMS co
 
 1. **Firebase console**: create a project, then *Authentication → Sign-in method → Phone → Enable*. Under *Phone numbers for testing* add a number and code (free, no SMS sent).
 2. **Android**: add an Android app with package `com.astro.astro_connect`. Add your debug **SHA-1 and SHA-256** (`cd android && ./gradlew signingReport`). Download `google-services.json` into `android/app/`.
-3. **iOS**: add an iOS app with bundle id `com.astro.astroConnect`. Download `GoogleService-Info.plist`, drag it into the Runner folder in Xcode and tick the *Runner* target. Then add a URL type in *Runner → Info → URL Types* whose scheme is your `GOOGLE_APP_ID` from that file with `:` replaced by `-` and prefixed `app-` (for example `1:123:ios:abc` becomes `app-1-123-ios-abc`). On real devices also upload an APNs key in Firebase *Project settings → Cloud Messaging*.
+3. **iOS**: add an iOS app with bundle id `com.astro.astroConnect`. Download `GoogleService-Info.plist` and put it in `ios/Runner/`. That's all: a build step bundles it and adds the URL scheme Firebase needs. On real devices also upload an APNs key in Firebase *Project settings → Cloud Messaging*.
 
    **These two config files are listed in `.gitignore` and are never committed.** Without them the app builds and runs in demo mode.
 4. **Server**: start it with your project id, e.g. `FIREBASE_PROJECT_ID=my-project dart run bin/server.dart`. This turns the demo OTP off and makes the server verify Firebase ID tokens.
 5. **Rebuild the app** (full stop and `flutter run`; a hot reload won't pick up the native config).
+
+**Roles stay on our server.** Firebase proves *who owns the number*; our server decides *what that person is*: a number registered as an astrologer signs in to the astrologer app, any other number is a customer. With Firebase on, customers use real SMS while astrologers keep the on-screen demo code (the demo astrologer numbers are not real phones). Set `ASTROLOGER_LOGIN=firebase` to require Firebase SMS for astrologers too, and add their numbers as Firebase test numbers (or use real ones).
 
 How it works: the app asks the server `/config` which mode is on, checks the number against the server (`/auth/check-phone`) *before* any SMS is sent, lets Firebase text and verify the code, then sends the resulting Firebase ID token to `/auth/firebase`. The server verifies the token's signature, project, expiry and phone number, and returns its own session token. Without the config files the app still builds and runs in demo mode.
 

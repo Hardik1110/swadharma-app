@@ -151,11 +151,12 @@ class _DetailsFormState extends ConsumerState<_DetailsForm> {
     final error = state.error;
 
     final isAstrologer = state.purpose == OtpPurpose.astrologer;
-    // Real-SMS servers hide the demo numbers. If the server can't be asked
-    // they are shown: Riverpod retries a failed request with growing delays and
-    // reports "loading" in between, so an error seen earlier counts as an error.
+    // Demo astrologer numbers are shown when astrologers sign in with the
+    // on-screen code. If the server can't be asked they are shown too: Riverpod
+    // retries a failed request with growing delays and reports "loading" in
+    // between, so an error seen earlier counts as an error.
     final demo = ref.watch(appConfigProvider.select(
-        (c) => c.hasValue ? c.requireValue.isDemoLogin : c.hasError));
+        (c) => c.hasValue ? c.requireValue.isDemoAstrologerLogin : c.hasError));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

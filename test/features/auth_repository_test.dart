@@ -11,9 +11,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FakeApi extends ApiClient {
-  FakeApi(this.phoneAuth) : super(Dio());
+  FakeApi(this.phoneAuth, {this.astrologerAuth}) : super(Dio());
 
   final String phoneAuth;
+  final String? astrologerAuth;
   final calls = <String>[];
   final bodies = <String, Object?>{};
   AppException? checkPhoneError;
@@ -21,7 +22,7 @@ class FakeApi extends ApiClient {
   @override
   Future<T> get<T>(String path, {Map<String, dynamic>? query}) async {
     calls.add('GET $path');
-    return {'phoneAuth': phoneAuth} as T;
+    return {'phoneAuth': phoneAuth, 'astrologerAuth': ?astrologerAuth} as T;
   }
 
   @override
@@ -129,5 +130,48 @@ void main() {
       repo.sendOtp('9876543210', OtpPurpose.login),
       throwsA(isA<AppException>().having((e) => e.code, 'code', 'firebase_not_configured')),
     );
+  });
+
+  group('each role can use its own login method', () {
+    test('customers via Firebase, astrologers via the on-screen code', () async {
+      final api = FakeApi('firebase', astrologerAuth: 'demo');
+      final gateway = FakeGateway();
+      final repo = await build(api, gateway);
+
+      // Customer: real SMS.
+      final customer = await repo.sendOtp('9876543210', OtpPurpose.signup);
+      expect(customer.devOtp, isNull);
+      expect(gateway.sentTo, ['9876543210']);
+      expect(api.calls, ['GET /config', 'POST /auth/check-phone']);
+
+      // Astrologer: demo code, no SMS, no Firebase round-trip.
+      api.calls.clear();
+      final astrologer = await repo.sendOtp('9100000002', OtpPurpose.astrologer);
+      expect(astrologer.devOtp, '123456');
+      expect(gateway.sentTo, ['9876543210'], reason: 'nothing sent for the astrologer');
+      expect(api.calls, ['GET /config', 'POST /auth/send-otp']);
+
+      await repo.verifyOtp(phone: '9100000002', otp: '123456', purpose: OtpPurpose.astrologer);
+      expect(api.calls, contains('POST /auth/verify-otp'));
+      expect(api.calls, isNot(contains('POST /auth/firebase')));
+    });
+
+    test('a single setting means both roles use the same method', () async {
+      final api = FakeApi('firebase'); // no astrologerAuth: same as customers
+      final gateway = FakeGateway();
+      final repo = await build(api, gateway);
+      await repo.sendOtp('9100000002', OtpPurpose.astrologer);
+      expect(gateway.sentTo, ['9100000002']);
+    });
+
+    test('astrologers on Firebase send the verified token', () async {
+      final api = FakeApi('firebase', astrologerAuth: 'firebase');
+      final gateway = FakeGateway();
+      final repo = await build(api, gateway);
+      await repo.sendOtp('9100000002', OtpPurpose.astrologer);
+      await repo.verifyOtp(phone: '9100000002', otp: '654321', purpose: OtpPurpose.astrologer);
+      expect(api.bodies['/auth/firebase'],
+          {'idToken': 'firebase-id-token', 'purpose': 'astrologer'});
+    });
   });
 }

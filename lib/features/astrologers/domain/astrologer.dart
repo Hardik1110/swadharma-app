@@ -186,6 +186,7 @@ class AppConfig {
     required this.callsEnabled,
     required this.expertise,
     this.phoneAuth = 'demo',
+    this.astrologerAuth,
   });
 
   final bool callsEnabled;
@@ -194,12 +195,18 @@ class AppConfig {
   /// 'demo' (OTP shown on screen) or 'firebase' (real SMS).
   final String phoneAuth;
 
+  /// How astrologers sign in (defaults to the same as customers).
+  final String? astrologerAuth;
+
   bool get isDemoLogin => phoneAuth == 'demo';
+
+  bool get isDemoAstrologerLogin => (astrologerAuth ?? phoneAuth) == 'demo';
 
   factory AppConfig.fromJson(Map<String, dynamic> j) => AppConfig(
         callsEnabled: j['callsEnabled'] as bool? ?? false,
         expertise: ((j['expertise'] as List?) ?? const []).cast<String>(),
         phoneAuth: j['phoneAuth'] as String? ?? 'demo',
+        astrologerAuth: j['astrologerAuth'] as String?,
       );
 }
 
