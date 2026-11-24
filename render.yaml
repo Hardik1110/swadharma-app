@@ -1,0 +1,20 @@
+# Render "Blueprint": New + > Blueprint > pick this repository.
+services:
+  - type: web
+    name: swadharma-api
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # Asked for in the Render dashboard (not stored in this file):
+      - key: AGORA_APP_ID
+        sync: false
+      - key: AGORA_APP_CERTIFICATE   # leave empty for a "testing mode" Agora project
+        sync: false
+      - key: DATA_FILE
+        value: /app/data/db.json
+      # The browser astrologer console has no login. Set to "false" to switch it off.
+      - key: ENABLE_CONSOLE
+        value: "true"

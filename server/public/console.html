@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swadharma · Astrologer Console</title>
+<script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.20.0.js"></script>
+<style>
+  :root { --p:#5B3FD0; --bg:#f5f3fb; --card:#fff; --muted:#6b6880; --ok:#1a9b5b; --warn:#c77700; --bad:#c62f3d; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:#1d1b26; }
+  header { background:var(--p); color:#fff; padding:12px 20px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; flex:1; }
+  select, button, input, textarea { font:inherit; }
+  select { padding:6px 8px; border-radius:8px; border:0; }
+  .pill { padding:2px 10px; border-radius:99px; font-size:12px; font-weight:600; background:#fff3; }
+  main { display:grid; grid-template-columns: 340px 1fr; gap:16px; padding:16px; height:calc(100vh - 56px); }
+  .card { background:var(--card); border-radius:14px; box-shadow:0 1px 3px #0001; padding:14px; overflow:auto; }
+  .session { border:1px solid #ece9f5; border-radius:10px; padding:10px; margin-bottom:10px; cursor:pointer; }
+  .session.sel { border-color:var(--p); box-shadow:0 0 0 2px #5b3fd033; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .grow { flex:1; }
+  .muted { color:var(--muted); font-size:12px; }
+  .badge { font-size:11px; font-weight:700; text-transform:uppercase; padding:2px 8px; border-radius:6px; }
+  .requested { background:#fff4e0; color:var(--warn); } .ongoing { background:#e3f6ec; color:var(--ok); }
+  .completed { background:#eceaf3; color:var(--muted); } .rejected,.cancelled,.missed { background:#fde8ea; color:var(--bad); }
+  button { border:0; border-radius:8px; padding:7px 14px; cursor:pointer; font-weight:600; }
+  .primary { background:var(--p); color:#fff; } .danger { background:var(--bad); color:#fff; } .ghost { background:#ece9f5; color:#1d1b26; }
+  button:disabled { opacity:.5; cursor:default; }
+  #detail { display:flex; flex-direction:column; }
+  #messages { flex:1; overflow:auto; padding:8px 0; display:flex; flex-direction:column; gap:6px; }
+  .msg { max-width:70%; padding:8px 12px; border-radius:12px; white-space:pre-wrap; }
+  .msg.user { background:#ece9f5; align-self:flex-start; }
+  .msg.astrologer { background:var(--p); color:#fff; align-self:flex-end; }
+  .msg.system { align-self:center; color:var(--muted); font-size:12px; }
+  .msg time { display:block; font-size:10px; opacity:.7; margin-top:2px; }
+  #composer { display:flex; gap:8px; margin-top:8px; }
+  #composer input { flex:1; padding:10px; border-radius:10px; border:1px solid #ddd; }
+  #videos { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:10px 0; }
+  .vid { background:#111; border-radius:12px; aspect-ratio: 4/3; position:relative; overflow:hidden; color:#bbb; display:flex; align-items:center; justify-content:center; }
+  .vid span { position:absolute; left:8px; bottom:6px; font-size:12px; color:#fff; z-index:2; }
+  .empty { color:var(--muted); text-align:center; margin-top:40px; }
+  .birth { background:#f7f5fd; border-radius:10px; padding:8px 12px; margin:8px 0; font-size:13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔮 Swadharma · Astrologer Console</h1>
+  <label>Signed in as
+    <select id="astro"><option value="">Choose astrologer…</option></select>
+  </label>
+  <span id="conn" class="pill">disconnected</span>
+</header>
+<main>
+  <section class="card">
+    <div class="row"><strong class="grow">Consultations</strong><span class="muted" id="count"></span></div>
+    <p class="muted">While you are connected, requests for this astrologer wait for you instead of the auto-reply bot.</p>
+    <div id="list"></div>
+  </section>
+  <section class="card" id="detail"><div class="empty">Select a consultation</div></section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const state = { astro: null, ws: null, sessions: new Map(), messages: new Map(), selected: null, typingTimer: null, call: null, retry: 0 };
+const fmtTime = (iso) => iso ? new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const icon = { chat:'💬', voice:'📞', video:'🎥' };
+
+async function api(path, method='GET') {
+  const r = await fetch(path, { method });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error?.message || r.statusText);
+  return j;
+}
+
+async function init() {
+  const list = await api('/console/astrologers');
+  for (const a of list) $('#astro').insertAdjacentHTML('beforeend', `<option value="${a.id}">${esc(a.name)} (${a.status})</option>`);
+  const saved = localStorage.getItem('astro');
+  if (saved) { $('#astro').value = saved; select(saved); }
+  $('#astro').onchange = (e) => select(e.target.value);
+  setInterval(renderDetailTimer, 1000);
+}
+
+async function select(id) {
+  localStorage.setItem('astro', id);
+  state.ws?.close(); state.sessions.clear(); state.selected = null;
+  if (!id) return;
+  state.astro = id;
+  for (const s of await api(`/console/astrologers/${id}/sessions`)) state.sessions.set(s.id, s);
+  connect(); renderList(); renderDetail();
+}
+
+function connect() {
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?astrologerId=${state.astro}`);
+  state.ws = ws;
+  ws.onopen = () => { state.retry = 0; $('#conn').textContent = 'online'; };
+  ws.onclose = () => {
+    $('#conn').textContent = 'reconnecting…';
+    if (state.ws === ws) setTimeout(connect, Math.min(1000 * 2 ** state.retry++, 10000));
+  };
+  ws.onmessage = (e) => {
+    const { type, data } = JSON.parse(e.data);
+    if (type === 'session.updated') {
+      const prev = state.sessions.get(data.id);
+      state.sessions.set(data.id, data);
+      if (!prev && data.status === 'requested') notify(`New ${data.type} request from ${data.user?.name}`);
+      if (state.call && state.call.sessionId === data.id && data.status !== 'ongoing') leaveCall();
+      renderList(); if (state.selected === data.id) renderDetail();
+    } else if (type === 'chat.message') {
+      const arr = state.messages.get(data.sessionId);
+      if (arr && !arr.some(m => m.id === data.id)) arr.push(data);
+      if (state.selected === data.sessionId) renderMessages();
+    } else if (type === 'typing' && data.sessionId === state.selected) {
+      $('#typing') && ($('#typing').textContent = 'User is typing…');
+      clearTimeout(state.typingTimer);
+      state.typingTimer = setTimeout(() => $('#typing') && ($('#typing').textContent = ''), 2500);
+    } else if (type === 'error') { alert(data.message); }
+  };
+}
+
+function notify(text) {
+  document.title = '🔔 ' + text;
+  setTimeout(() => document.title = 'Swadharma · Astrologer Console', 5000);
+}
+
+function renderList() {
+  const items = [...state.sessions.values()].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+  $('#count').textContent = `${items.filter(s => s.status === 'requested').length} pending`;
+  $('#list').innerHTML = items.map(s => `
+    <div class="session ${s.id === state.selected ? 'sel' : ''}" data-id="${s.id}">
+      <div class="row"><strong class="grow">${icon[s.type]} ${esc(s.user?.name || 'User')}</strong><span class="badge ${s.status}">${s.status}</span></div>
+      <div class="muted">${new Date(s.requestedAt).toLocaleString()} · ₹${s.ratePerMinute}/min</div>
+      ${s.status === 'requested' ? `<div class="row" style="margin-top:8px"><button class="primary" data-act="accept">Accept</button><button class="ghost" data-act="reject">Decline</button></div>` : ''}
+    </div>`).join('') || '<div class="empty">No consultations yet</div>';
+  for (const el of document.querySelectorAll('.session')) {
+    el.onclick = async (e) => {
+      const act = e.target.dataset.act;
+      if (act) { e.stopPropagation(); try { await api(`/console/sessions/${el.dataset.id}/${act}`, 'POST'); } catch (err) { alert(err.message); } }
+      open(el.dataset.id);
+    };
+  }
+}
+
+async function open(id) {
+  state.selected = id;
+  if (!state.messages.has(id)) state.messages.set(id, await api(`/console/sessions/${id}/messages`));
+  renderList(); renderDetail();
+}
+
+function elapsed(s) {
+  if (!s.startedAt) return '00:00';
+  const end = s.endedAt ? new Date(s.endedAt) : new Date();
+  const sec = Math.max(0, Math.floor((end - new Date(s.startedAt)) / 1000));
+  return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+}
+function renderDetailTimer() {
+  const s = state.sessions.get(state.selected);
+  if (s && $('#timer')) $('#timer').textContent = elapsed(s);
+}
+
+function renderDetail() {
+  const s = state.sessions.get(state.selected);
+  if (!s) { $('#detail').innerHTML = '<div class="empty">Select a consultation</div>'; return; }
+  const u = s.user || {};
+  const live = s.status === 'ongoing';
+  $('#detail').innerHTML = `
+    <div class="row"><h2 class="grow" style="margin:0;font-size:18px">${icon[s.type]} ${esc(u.name)}</h2>
+      <span class="badge ${s.status}">${s.status}</span>&nbsp;<strong id="timer">${elapsed(s)}</strong>
+      ${live ? '<button class="danger" id="end">End</button>' : ''}</div>
+    <div class="birth">🗓 ${esc(u.dob)} &nbsp; ⏰ ${esc(u.birthTime)} &nbsp; 📍 ${esc(u.birthPlace)}</div>
+    ${s.status === 'completed' ? `<div class="muted">Duration ${elapsed(s)} · ₹${s.cost} · ${esc(s.endReason)}${s.rating ? ` · rated ${'★'.repeat(s.rating)}` : ''}</div>` : ''}
+    ${s.type !== 'chat' ? callPanel(s) : ''}
+    <div id="messages"></div><div class="muted" id="typing"></div>
+    ${live && s.type === 'chat' ? '<form id="composer"><input id="text" placeholder="Type a reply…" autocomplete="off"><button class="primary">Send</button></form>' : ''}`;
+  $('#end') && ($('#end').onclick = () => api(`/console/sessions/${s.id}/end`, 'POST').catch(e => alert(e.message)));
+  const form = $('#composer');
+  if (form) {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const text = $('#text').value.trim(); if (!text) return;
+      state.ws.send(JSON.stringify({ type: 'chat.send', data: { sessionId: s.id, text, clientId: crypto.randomUUID() } }));
+      $('#text').value = '';
+    };
+    $('#text').oninput = () => state.ws.send(JSON.stringify({ type: 'typing', data: { sessionId: s.id } }));
+    $('#text').focus();
+  }
+  if (s.type !== 'chat') bindCall(s);
+  renderMessages();
+}
+
+function renderMessages() {
+  const box = $('#messages'); if (!box) return;
+  const msgs = state.messages.get(state.selected) || [];
+  box.innerHTML = msgs.map(m => `<div class="msg ${m.sender}">${esc(m.text)}${m.sender !== 'system' ? `<time>${fmtTime(m.sentAt)}</time>` : ''}</div>`).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+// ---------------------------------------------------------------- calls
+function callPanel(s) {
+  const inCall = state.call?.sessionId === s.id;
+  if (!s.rtc) return '<p class="muted">Calls are not configured on the server (AGORA_APP_ID).</p>';
+  return `
+    <div id="videos">
+      <div class="vid" id="local"><span>You</span>${s.type === 'voice' ? '🎙' : ''}</div>
+      <div class="vid" id="remote"><span>${esc(s.user?.name)}</span><em id="remoteState">${inCall ? 'Waiting for user…' : ''}</em></div>
+    </div>
+    <div class="row">
+      ${s.status === 'ongoing' && !inCall ? '<button class="primary" id="join">Join call</button><button class="ghost" id="joinDemo" title="Plays a pre-recorded voice and an animated video, no mic or camera needed">Join with demo clip</button>' : ''}
+      ${inCall ? '<button class="ghost" id="mute">' + (state.call.muted ? 'Unmute' : 'Mute') + '</button><button class="danger" id="leave">Leave</button>' : ''}
+      <span class="muted">Channel: ${esc(s.rtc.channel)}</span>
+    </div>
+    ${state.call?.demo ? '<p class="muted">Demo clip is playing: a pre-recorded voice and an animated picture stand in for the astrologer.</p>' : ''}`;
+}
+
+function bindCall(s) {
+  $('#join') && ($('#join').onclick = () => joinCall(s).catch(e => { alert('Could not join: ' + e.message); leaveCall(); }));
+  $('#joinDemo') && ($('#joinDemo').onclick = () => joinCall(s, { demo: true }).catch(e => { alert('Could not join: ' + e.message); leaveCall(); }));
+  $('#leave') && ($('#leave').onclick = leaveCall);
+  $('#mute') && ($('#mute').onclick = async () => {
+    state.call.muted = !state.call.muted;
+    await state.call.mic.setMuted(state.call.muted);
+    renderDetail();
+  });
+  if (state.call?.sessionId === s.id) {
+    if (state.call.demo) $('#local')?.appendChild(state.call.demo.canvas);
+    else state.call.cam?.play('local');
+    for (const u of state.call.client.remoteUsers) {
+      if (u.videoTrack) { u.videoTrack.play('remote'); $('#remoteState').textContent = ''; }
+    }
+  }
+}
+
+// Animated "demo astrologer" picture drawn on a canvas and streamed as video.
+function makeDemoCanvas(name) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640; canvas.height = 480;
+  canvas.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0';
+  const ctx = canvas.getContext('2d');
+  const initials = name.split(/\s+/).filter(w => /^[A-Za-z]/.test(w) && !w.endsWith('.')).slice(0, 2).map(w => w[0].toUpperCase()).join('') || 'A';
+  let t = 0;
+  const draw = () => {
+    t += 0.04;
+    const g = ctx.createLinearGradient(0, 0, 640, 480);
+    g.addColorStop(0, '#150E3A'); g.addColorStop(1, '#3A2A8F');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 640, 480);
+    for (let i = 0; i < 3; i++) {
+      const p = (t * 0.35 + i / 3) % 1;
+      ctx.beginPath(); ctx.arc(320, 190, 72 + p * 95, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(230,180,80,' + (0.55 * (1 - p)).toFixed(2) + ')'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(320, 190, 66, 0, Math.PI * 2); ctx.fillStyle = '#5B49C9'; ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '700 46px sans-serif'; ctx.fillText(initials, 320, 192);
+    ctx.font = '700 28px Georgia, serif'; ctx.fillText(name, 320, 320);
+    ctx.font = '600 15px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.7)';
+    ctx.fillText('DEMO CLIP \u00b7 simulated astrologer', 320, 356);
+    // little voice meter
+    for (let i = 0; i < 9; i++) {
+      const h = 8 + Math.abs(Math.sin(t * 2.2 + i * 0.9)) * 26;
+      ctx.fillStyle = 'rgba(230,180,80,.85)';
+      ctx.fillRect(250 + i * 17, 420 - h / 2, 9, h);
+    }
+  };
+  draw();
+  const timer = setInterval(draw, 1000 / 24); // setInterval keeps running in background tabs
+  return { canvas, timer };
+}
+
+async function joinCall(s, { demo = false } = {}) {
+  const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+  state.call = { sessionId: s.id, client, muted: false };
+  client.on('user-published', async (user, mediaType) => {
+    await client.subscribe(user, mediaType);
+    if (mediaType === 'video') { user.videoTrack.play('remote'); $('#remoteState') && ($('#remoteState').textContent = ''); }
+    if (mediaType === 'audio') user.audioTrack.play();
+  });
+  client.on('user-left', () => { $('#remoteState') && ($('#remoteState').textContent = 'User left the call'); });
+  await client.join(s.rtc.appId, s.rtc.channel, s.rtc.token || null, null);
+
+  const tracks = [];
+  if (demo) {
+    // Pre-recorded voice (looped) + animated picture: no mic or camera needed.
+    const astro = state.astro && document.querySelector('#astro option:checked')?.textContent.replace(/\s*\(.*\)$/, '') || 'Demo Astrologer';
+    state.call.demo = makeDemoCanvas(astro);
+    state.call.mic = await AgoraRTC.createBufferSourceAudioTrack({ source: '/demo/demo-astrologer.wav' });
+    state.call.mic.startProcessAudioBuffer({ loop: true });
+    tracks.push(state.call.mic);
+    if (s.type === 'video') {
+      const stream = state.call.demo.canvas.captureStream(24);
+      state.call.cam = AgoraRTC.createCustomVideoTrack({ mediaStreamTrack: stream.getVideoTracks()[0] });
+      tracks.push(state.call.cam);
+    }
+  } else {
+    state.call.mic = await AgoraRTC.createMicrophoneAudioTrack();
+    tracks.push(state.call.mic);
+    if (s.type === 'video') { state.call.cam = await AgoraRTC.createCameraVideoTrack(); tracks.push(state.call.cam); }
+  }
+  await client.publish(tracks);
+  renderDetail();
+}
+
+async function leaveCall() {
+  const c = state.call; state.call = null;
+  if (!c) return;
+  if (c.demo) { clearInterval(c.demo.timer); c.mic?.stopProcessAudioBuffer?.(); }
+  c.mic?.close(); c.cam?.close();
+  await c.client.leave().catch(() => {});
+  renderDetail();
+}
+
+init().catch(e => alert(e.message));
+</script>
+</body>
+</html>
