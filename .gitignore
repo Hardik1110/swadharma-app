@@ -64,3 +64,6 @@ test/golden/out/
 
 # Personal editor settings
 .vscode/settings.json
+
+# Built apps for sending (too big for git)
+dist/

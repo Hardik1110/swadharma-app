@@ -106,6 +106,8 @@ Run the server in demo mode, then the app on two devices:
 
 Without a person on the other side, chat is answered by a simple bot and calls are not offered (the app suggests chat instead). The browser console (`/console`) is the older single-person alternative.
 
+> **Live demo server:** https://swadharma-api.onrender.com (free tier: the first request after a quiet spell can take up to a minute to wake it; open `/health` first). The Android APK in the hand-off points at this server.
+
 > **Sending this to someone else?** See [DEPLOY.md](DEPLOY.md): host the server online and build one APK that works anywhere.
 
 ## Running on a real phone
