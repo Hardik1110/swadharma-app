@@ -268,8 +268,14 @@ function makeDemoCanvas(name) {
 }
 
 async function joinCall(s, { demo = false } = {}) {
+  if (state.call) return; // already joining or in a call: a second click must not replace it
   const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
-  state.call = { sessionId: s.id, client, muted: false };
+  const call = { sessionId: s.id, client, muted: false };
+  state.call = call;
+  // The call can be ended while we are still setting it up (the user hangs up,
+  // or the session changes). Check after each wait so we never publish tracks
+  // that leaveCall() has already closed.
+  const cancelled = () => state.call !== call;
   client.on('user-published', async (user, mediaType) => {
     await client.subscribe(user, mediaType);
     if (mediaType === 'video') { user.videoTrack.play('remote'); $('#remoteState') && ($('#remoteState').textContent = ''); }
@@ -277,24 +283,27 @@ async function joinCall(s, { demo = false } = {}) {
   });
   client.on('user-left', () => { $('#remoteState') && ($('#remoteState').textContent = 'User left the call'); });
   await client.join(s.rtc.appId, s.rtc.channel, s.rtc.token || null, null);
+  if (cancelled()) { await client.leave().catch(() => {}); return; }
 
   const tracks = [];
   if (demo) {
     // Pre-recorded voice (looped) + animated picture: no mic or camera needed.
     const astro = state.astro && document.querySelector('#astro option:checked')?.textContent.replace(/\s*\(.*\)$/, '') || 'Demo Astrologer';
-    state.call.demo = makeDemoCanvas(astro);
-    state.call.mic = await AgoraRTC.createBufferSourceAudioTrack({ source: '/demo/demo-astrologer.wav' });
-    state.call.mic.startProcessAudioBuffer({ loop: true });
-    tracks.push(state.call.mic);
+    call.demo = makeDemoCanvas(astro);
+    call.mic = await AgoraRTC.createBufferSourceAudioTrack({ source: '/demo/demo-astrologer.wav' });
+    if (cancelled()) { call.mic.close(); clearInterval(call.demo.timer); await client.leave().catch(() => {}); return; }
+    call.mic.startProcessAudioBuffer({ loop: true });
+    tracks.push(call.mic);
     if (s.type === 'video') {
-      const stream = state.call.demo.canvas.captureStream(24);
-      state.call.cam = AgoraRTC.createCustomVideoTrack({ mediaStreamTrack: stream.getVideoTracks()[0] });
-      tracks.push(state.call.cam);
+      const stream = call.demo.canvas.captureStream(24);
+      call.cam = AgoraRTC.createCustomVideoTrack({ mediaStreamTrack: stream.getVideoTracks()[0] });
+      tracks.push(call.cam);
     }
   } else {
-    state.call.mic = await AgoraRTC.createMicrophoneAudioTrack();
-    tracks.push(state.call.mic);
-    if (s.type === 'video') { state.call.cam = await AgoraRTC.createCameraVideoTrack(); tracks.push(state.call.cam); }
+    call.mic = await AgoraRTC.createMicrophoneAudioTrack();
+    tracks.push(call.mic);
+    if (s.type === 'video') { call.cam = await AgoraRTC.createCameraVideoTrack(); tracks.push(call.cam); }
+    if (cancelled()) { tracks.forEach(t => t.close()); await client.leave().catch(() => {}); return; }
   }
   await client.publish(tracks);
   renderDetail();
