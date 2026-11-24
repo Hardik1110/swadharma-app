@@ -17,3 +17,7 @@ services:
       # The browser astrologer console has no login. Set to "false" to switch it off.
       - key: ENABLE_CONSOLE
         value: "true"
+      # Customers sign in with Firebase SMS when this is set (the Firebase project
+      # id, e.g. "astro-co"). Leave empty for the on-screen demo code.
+      - key: FIREBASE_PROJECT_ID
+        sync: false
