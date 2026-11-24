@@ -157,6 +157,7 @@ LIVE_SERVER=http://localhost:8788 flutter test test/contract
 
 ## Notes / limits
 
+- Demo wording: the login screen's "Verified astrologers" badge, the verified tick on astrologer cards and the Terms of Service / Privacy Policy line are placeholders. There is no astrologer verification process and there are no legal pages.
 - The backend is a demo: in-memory + JSON file, OTP shown in the response, no SMS, no payments, unauthenticated astrologer console.
 - Calls support both Agora modes: App-ID-only (testing) and signed tokens (set `AGORA_APP_CERTIFICATE`; the server issues a 4-hour token per call, using the v006 token format). The certificate never leaves the server.
 - Android `compileSdk` is forced to 37 because the Agora and permission plugins require it.
