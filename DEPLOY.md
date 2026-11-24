@@ -34,7 +34,7 @@ Leave `DEV_MODE` and `FIREBASE_PROJECT_ID` unset for a demo: the login code is s
 
 1. Put this folder in a GitHub repository (`git init`, commit, push).
 2. Sign up at render.com, then **New + → Blueprint**, pick the repository. It reads `render.yaml`.
-3. When asked, enter `AGORA_APP_ID` (and leave `AGORA_APP_CERTIFICATE` empty for a testing-mode project).
+3. When asked, enter `AGORA_APP_ID` (the App ID of your testing-mode Agora project).
 4. Wait for the deploy. Open `https://<your-service>.onrender.com/health`. It should show `{"ok":true}`.
 
 ## 2b. Fly.io (no GitHub needed; asks for a card)
