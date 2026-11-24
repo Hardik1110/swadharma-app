@@ -11,7 +11,6 @@ import '../../../../core/widgets/otp_boxes.dart';
 import '../../../../core/widgets/ui.dart';
 import '../../../astrologers/presentation/providers/astrologer_providers.dart';
 import '../../domain/auth_repository.dart';
-import '../providers/auth_providers.dart';
 import '../providers/login_controller.dart';
 import '../widgets/server_settings_sheet.dart';
 
@@ -241,12 +240,6 @@ class _DetailsFormState extends ConsumerState<_DetailsForm> {
         if (error != null) ...[
           const SizedBox(height: 12),
           _Notice(error.message, info: error.code == 'switched'),
-        ] else if (ref.watch(sessionExpiredNoticeProvider)) ...[
-          const SizedBox(height: 12),
-          const _Notice(
-            'Your session ended, usually because the server restarted. Please sign in again.',
-            info: true,
-          ),
         ],
         if (isAstrologer && demo) ...[
           const SizedBox(height: 14),
